@@ -1,0 +1,7 @@
+<network>
+  <name>kvm-sandbox</name>
+  <forward mode='open'/>
+  <bridge name='br-kvm-sandbox' stp='off' delay='0'/>
+  <dns enable='no'/>
+  <ip address='10.248.0.254' netmask='255.255.255.0'/>
+</network>

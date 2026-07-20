@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+
+import argparse
+import shlex
+import subprocess
+
+import sandbox_config as config
+from kvm_sandbox import check, manage
+from kvm_sandbox.common import (die, log, require_not_root, resolve_ip,
+                                resolve_subnet, validate_name)
+
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Manage and check network-restricted and hardened KVM "
+                    "sandboxes.",
+    )
+    sub = p.add_subparsers(dest="command", required=True)
+    name_help = ("VM name: 'sandbox<n>' or 'sandbox<n>-<label>'. <n> sets "
+                 "the IP (sandbox5 -> .5, sandbox6-my-project -> .6).")
+
+    c = sub.add_parser("create", help="create a sandbox VM")
+    c.set_defaults(run=manage.cmd_create)
+    c.add_argument("name", help=name_help)
+    c.add_argument("--memory", type=int, default=config.memory,
+                   help=f"MiB (default: {config.memory})")
+    c.add_argument("--vcpus", type=int, default=config.vcpus,
+                   help=f"default: {config.vcpus}")
+    c.add_argument("--disk", default=config.disk,
+                   help=f"Disk size (default: {config.disk})")
+    c.add_argument("--provision", metavar="EXECUTABLE",
+                   help="host executable copied into the VM and run as root "
+                        "on first boot (e.g. a script installing dev tools)")
+
+    d = sub.add_parser("delete",
+                       help="delete a sandbox VM and its disk and seed files")
+    d.set_defaults(run=manage.cmd_delete)
+    d.add_argument("name", help=name_help)
+
+    k = sub.add_parser("check", help="test that a sandbox VM cannot reach "
+                                     "private addresses")
+    k.set_defaults(run=check.cmd_check)
+    k.add_argument("name", help=name_help)
+    k.add_argument("--install-tools", action="store_true",
+                   help="install nmap and curl in the VM (via apt-get) "
+                        "before probing")
+
+    return p.parse_args()
+
+
+def main():
+    require_not_root()
+    a = parse_args()
+    n = validate_name(a.name)
+
+    if a.command != "delete":
+        a.subnet, a.gateway = resolve_subnet(config)
+        a.ip = resolve_ip(n, a.subnet, a.gateway)
+        log(f"IP {a.ip} (from '{a.name}').")
+
+    a.run(a)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except subprocess.CalledProcessError as e:
+        die(f"Command failed (exit {e.returncode}): {shlex.join(e.cmd)}")
+    except KeyboardInterrupt:
+        die("Interrupted.", code=130)
+    except EOFError:
+        die("Input closed.", code=130)
